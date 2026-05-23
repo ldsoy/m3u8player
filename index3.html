@@ -73,10 +73,9 @@ function playMedia(url) {
  document.getElementById('url').addEventListener('keydown', function(e) {
    if (e.key === 'Enter') playMedia(this.value);
  });
-// URL 参数自动播放: ?url=xxx
+// 只支持哈希参数自动播放: #url
 (function() {
-    var params = new URLSearchParams(location.search);
-    var autoUrl = params.get('url') || location.hash.slice(1);
+    var autoUrl = location.hash.slice(1);
     if (autoUrl) playMedia(autoUrl);
 })();
 </script>
