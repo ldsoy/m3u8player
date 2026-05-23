@@ -14,48 +14,56 @@ body{text-align:center}header{margin:20px 0}header h1{width:280px;margin:0 auto}
 
 /* ── 拖动进度提示浮层 ── */
 #ckplays .drag-seek-hint{
-  display:none;
-  position:absolute;
-  top:50%;left:50%;
-  transform:translate(-50%,-50%);
-  z-index:100;
-  background:rgba(0,0,0,.72);
-  color:#fff;
-  padding:10px 22px;
-  border-radius:8px;
-  font-size:15px;
-  font-family:arial,sans-serif;
-  pointer-events:none;
-  white-space:nowrap;
-  user-select:none;
-  box-shadow:0 2px 12px rgba(0,0,0,.4);
+  display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  z-index:100;background:rgba(0,0,0,.72);color:#fff;padding:10px 22px;border-radius:8px;
+  font-size:15px;font-family:arial,sans-serif;pointer-events:none;white-space:nowrap;
+  user-select:none;box-shadow:0 2px 12px rgba(0,0,0,.4);
 }
-#ckplays .drag-seek-hint .seek-icon{
-  font-size:18px;
-  margin-right:4px;
-  vertical-align:middle;
-}
-#ckplays .drag-seek-hint .seek-time{
-  font-weight:bold;
-  vertical-align:middle;
-}
-#ckplays .drag-seek-hint .seek-cur{
-  font-size:12px;
-  color:#aaa;
-  margin-top:4px;
-  text-align:center;
-}
+#ckplays .drag-seek-hint .seek-icon{font-size:18px;margin-right:4px;vertical-align:middle}
+#ckplays .drag-seek-hint .seek-time{font-weight:bold;vertical-align:middle}
+#ckplays .drag-seek-hint .seek-cur{font-size:12px;color:#aaa;margin-top:4px;text-align:center}
 /* 拖动时进度条高亮 */
 #ckplays .drag-progress-bar{
-  display:none;
-  position:absolute;
-  bottom:0;left:0;
-  height:3px;
-  background:rgba(79,195,247,.9);
-  z-index:100;
-  pointer-events:none;
-  transition:width .05s linear;
+  display:none;position:absolute;bottom:0;left:0;height:3px;
+  background:rgba(79,195,247,.9);z-index:100;pointer-events:none;transition:width .05s linear;
 }
+
+/* ── 长按2倍速提示 ── */
+#ckplays .long-press-hint{
+  display:none;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  z-index:100;background:rgba(0,0,0,.72);color:#fff;padding:8px 20px;border-radius:20px;
+  font-size:14px;font-family:arial,sans-serif;pointer-events:none;user-select:none;
+  box-shadow:0 2px 12px rgba(0,0,0,.4);animation:lp-pulse 1s ease-in-out infinite;
+}
+@keyframes lp-pulse{
+  0%,100%{opacity:.85}50%{opacity:1}
+}
+
+/* ── 右侧悬浮按钮（倍速 + 锁定） ── */
+#ckplays .side-controls{
+  position:absolute;right:8px;top:50%;transform:translateY(-50%);
+  z-index:50;display:flex;flex-direction:column;gap:10px;
+}
+#ckplays .side-controls .sc-btn{
+  width:36px;height:36px;border-radius:50%;border:none;
+  background:rgba(0,0,0,.4);color:#fff;font-size:14px;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:background .2s;font-family:arial,sans-serif;
+}
+#ckplays .side-controls .sc-btn:active{background:rgba(0,0,0,.6)}
+
+/* ── 锁定遮罩 ── */
+#ckplays .lock-mask{
+  display:none;position:absolute;top:0;left:0;width:100%;height:100%;
+  z-index:200;cursor:pointer;
+}
+#ckplays .lock-mask .lock-tip{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  color:rgba(255,255,255,.7);font-size:13px;background:rgba(0,0,0,.45);
+  padding:8px 16px;border-radius:16px;pointer-events:none;
+  animation:lock-fade 2s ease-out forwards;
+}
+@keyframes lock-fade{0%{opacity:1}70%{opacity:1}100%{opacity:0}}
 </style>
 </head>
 <body>
@@ -85,12 +93,20 @@ body{text-align:center}header{margin:20px 0}header h1{width:280px;margin:0 auto}
 <script src="https://cdn.jsdelivr.net/npm/dplayer@1.27.1/dist/DPlayer.min.js"></script>
 <script>
 var dp = null;
+var isLocked = false;
+var currentSpeedIdx = 2; // 默认 1.0x
+var speedList = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0];
 
 /* ── 拖动进度配置 ── */
 var DRAG_SEEK_CONFIG = {
   threshold: 10,       // 最小拖动距离(px)，低于此值不触发
   sensitivity: 0.5,    // 每拖动1px对应的秒数
-  maxSeek: 120,        // 单次最大快进/快退秒数
+};
+
+/* ── 长按倍速配置 ── */
+var LONG_PRESS_CONFIG = {
+  delay: 500,          // 长按触发延迟(ms)
+  speed: 2.0,          // 长按倍速
 };
 
 /* ── 格式化时间 mm:ss ── */
@@ -107,7 +123,6 @@ function doPlay(url) {
 
     if (dp) { dp.destroy(); dp = null; }
 
-    // 清空播放器区域，准备加载 DPlayer
     var container = document.getElementById('ckplays');
     container.innerHTML = '';
 
@@ -122,13 +137,18 @@ function doPlay(url) {
 
     container.style.height = 'auto';
 
-    // 等待 video 元素就绪后绑定拖动进度
+    // 重置状态
+    isLocked = false;
+    currentSpeedIdx = 2;
+
+    // 初始化所有手势和按钮
     initDragSeek(container);
+    initLongPress(container);
+    initSideControls(container);
 }
 
-/* ── 初始化拖动进度控制 ── */
+/* ── 拖动进度控制 ── */
 function initDragSeek(container) {
-    // 创建提示浮层
     var hint = document.createElement('div');
     hint.className = 'drag-seek-hint';
     hint.innerHTML =
@@ -137,7 +157,6 @@ function initDragSeek(container) {
         '<div class="seek-cur"></div>';
     container.appendChild(hint);
 
-    // 创建底部进度条
     var progressBar = document.createElement('div');
     progressBar.className = 'drag-progress-bar';
     container.appendChild(progressBar);
@@ -146,7 +165,6 @@ function initDragSeek(container) {
     var startX = 0;
     var startTime = 0;
     var duration = 0;
-    var dragDx = 0;
     var seekSeconds = 0;
 
     function getVideo() {
@@ -154,29 +172,25 @@ function initDragSeek(container) {
     }
 
     function onDragStart(x) {
+        if (isLocked) return;
         var video = getVideo();
         if (!video || !video.duration || video.readyState < 1) return;
         dragging = true;
         startX = x;
         startTime = video.currentTime;
         duration = video.duration;
-        dragDx = 0;
         seekSeconds = 0;
     }
 
     function onDragMove(x) {
         if (!dragging) return;
-        dragDx = x - startX;
-        // 每px对应的秒数，限制最大值
-        seekSeconds = dragDx * DRAG_SEEK_CONFIG.sensitivity;
-        if (seekSeconds > DRAG_SEEK_CONFIG.maxSeek) seekSeconds = DRAG_SEEK_CONFIG.maxSeek;
-        if (seekSeconds < -DRAG_SEEK_CONFIG.maxSeek) seekSeconds = -DRAG_SEEK_CONFIG.maxSeek;
+        seekSeconds = (x - startX) * DRAG_SEEK_CONFIG.sensitivity;
+        // 不限制最大快进/快退
 
         var targetTime = startTime + seekSeconds;
         if (targetTime < 0) { targetTime = 0; seekSeconds = -startTime; }
         if (targetTime > duration) { targetTime = duration; seekSeconds = duration - startTime; }
 
-        // 更新提示
         var iconEl = hint.querySelector('.seek-icon');
         var timeEl = hint.querySelector('.seek-time');
         var curEl = hint.querySelector('.seek-cur');
@@ -192,10 +206,8 @@ function initDragSeek(container) {
             timeEl.textContent = '0s';
         }
         curEl.textContent = formatTime(targetTime) + ' / ' + formatTime(duration);
-
         hint.style.display = 'block';
 
-        // 更新底部进度条
         var pct = (targetTime / duration) * 100;
         progressBar.style.width = pct + '%';
         progressBar.style.display = 'block';
@@ -204,21 +216,18 @@ function initDragSeek(container) {
     function onDragEnd() {
         if (!dragging) return;
         dragging = false;
-
-        // 应用跳转
         var video = getVideo();
         if (video && Math.abs(seekSeconds) >= DRAG_SEEK_CONFIG.threshold * DRAG_SEEK_CONFIG.sensitivity) {
             video.currentTime = startTime + seekSeconds;
         }
-
-        // 隐藏提示
         hint.style.display = 'none';
         progressBar.style.display = 'none';
         seekSeconds = 0;
-        dragDx = 0;
     }
 
-    // ── Touch 事件 ──
+    // 保存引用，供外部（长按/锁定）调用
+    container._dragSeek = { onDragStart: onDragStart, onDragMove: onDragMove, onDragEnd: onDragEnd };
+
     container.addEventListener('touchstart', function(e) {
         if (e.touches.length !== 1) return;
         onDragStart(e.touches[0].clientX);
@@ -226,30 +235,141 @@ function initDragSeek(container) {
 
     container.addEventListener('touchmove', function(e) {
         if (e.touches.length !== 1) return;
-        if (dragging) e.preventDefault(); // 拖动中阻止默认滚动
+        if (dragging) e.preventDefault();
         onDragMove(e.touches[0].clientX);
     }, { passive: false });
 
-    container.addEventListener('touchend', function() {
-        onDragEnd();
+    container.addEventListener('touchend', function() { onDragEnd(); }, { passive: true });
+    container.addEventListener('touchcancel', function() { onDragEnd(); }, { passive: true });
+
+    container.addEventListener('mousedown', function(e) { onDragStart(e.clientX); });
+    document.addEventListener('mousemove', function(e) { if (dragging) onDragMove(e.clientX); });
+    document.addEventListener('mouseup', function() { if (dragging) onDragEnd(); });
+}
+
+/* ── 长按2倍速 ── */
+function initLongPress(container) {
+    var longPressHint = document.createElement('div');
+    longPressHint.className = 'long-press-hint';
+    longPressHint.textContent = '▶▶ 2.0X 加速中';
+    container.appendChild(longPressHint);
+
+    var longPressTimer = null;
+    var longPressActive = false;
+    var prevSpeed = 1.0;
+    var movedDuringPress = false;
+
+    function getVideo() {
+        return container.querySelector('video');
+    }
+
+    function startPress() {
+        if (isLocked) return;
+        movedDuringPress = false;
+        longPressTimer = setTimeout(function() {
+            var video = getVideo();
+            if (!video) return;
+            longPressActive = true;
+            prevSpeed = video.playbackRate;
+            video.playbackRate = LONG_PRESS_CONFIG.speed;
+            longPressHint.style.display = 'block';
+        }, LONG_PRESS_CONFIG.delay);
+    }
+
+    function cancelPress() {
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+        if (longPressActive) {
+            var video = getVideo();
+            if (video) video.playbackRate = prevSpeed;
+            longPressHint.style.display = 'none';
+            longPressActive = false;
+        }
+    }
+
+    // 拖动时取消长按
+    container.addEventListener('touchmove', function(e) {
+        if (e.touches.length !== 1) return;
+        movedDuringPress = true;
+        cancelPress();
     }, { passive: true });
 
-    container.addEventListener('touchcancel', function() {
-        onDragEnd();
+    container.addEventListener('touchstart', function(e) {
+        if (e.touches.length !== 1) return;
+        startPress();
     }, { passive: true });
 
-    // ── Mouse 事件（桌面端兼容） ──
-    container.addEventListener('mousedown', function(e) {
-        onDragStart(e.clientX);
+    container.addEventListener('touchend', function() { cancelPress(); }, { passive: true });
+    container.addEventListener('touchcancel', function() { cancelPress(); }, { passive: true });
+
+    // 桌面端长按
+    container.addEventListener('mousedown', function() { startPress(); });
+    document.addEventListener('mouseup', function() { cancelPress(); });
+}
+
+/* ── 右侧按钮：倍速 + 锁定 ── */
+function initSideControls(container) {
+    // 倍速按钮
+    var speedBtn = document.createElement('button');
+    speedBtn.className = 'sc-btn';
+    speedBtn.title = '倍速';
+    speedBtn.textContent = speedList[currentSpeedIdx] + 'X';
+
+    // 锁定按钮
+    var lockBtn = document.createElement('button');
+    lockBtn.className = 'sc-btn';
+    lockBtn.title = '锁定';
+    lockBtn.innerHTML = '&#128274;';
+
+    var sideBar = document.createElement('div');
+    sideBar.className = 'side-controls';
+    sideBar.appendChild(speedBtn);
+    sideBar.appendChild(lockBtn);
+    container.appendChild(sideBar);
+
+    // 锁定遮罩
+    var lockMask = document.createElement('div');
+    lockMask.className = 'lock-mask';
+    container.appendChild(lockMask);
+
+    // ── 倍速切换 ──
+    speedBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        var video = container.querySelector('video');
+        if (!video) return;
+        currentSpeedIdx = (currentSpeedIdx + 1) % speedList.length;
+        var sp = speedList[currentSpeedIdx];
+        video.playbackRate = sp;
+        speedBtn.textContent = sp + 'X';
     });
 
-    document.addEventListener('mousemove', function(e) {
-        if (!dragging) return;
-        onDragMove(e.clientX);
+    // ── 锁定/解锁 ──
+    lockBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        isLocked = !isLocked;
+        if (isLocked) {
+            lockMask.style.display = 'block';
+            lockBtn.innerHTML = '&#128275;';
+            lockBtn.title = '解锁';
+            // 锁定时隐藏倍速按钮
+            speedBtn.style.display = 'none';
+            // 提示
+            lockMask.innerHTML = '<span class="lock-tip">已锁定 · 点击任意位置解锁</span>';
+        } else {
+            lockMask.style.display = 'none';
+            lockBtn.innerHTML = '&#128274;';
+            lockBtn.title = '锁定';
+            speedBtn.style.display = 'flex';
+        }
     });
 
-    document.addEventListener('mouseup', function() {
-        if (dragging) onDragEnd();
+    // 点击遮罩解锁
+    lockMask.addEventListener('click', function(e) {
+        e.stopPropagation();
+        isLocked = false;
+        lockMask.style.display = 'none';
+        lockBtn.innerHTML = '&#128274;';
+        lockBtn.title = '锁定';
+        speedBtn.style.display = 'flex';
     });
 }
 
