@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<meta http-equiv="X-UA-Compatible" content="IE=Edge">
+<title>前端通用媒体测试</title>
+<link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
+<link href="https://cdn.jsdelivr.net/npm/amazeui@2.7.2/css/amazeui.min.css" rel="stylesheet">
+<style>body{text-align:center;}header{margin:20px 0}header h1{width:320px;margin:0 auto}#footer{margin-top:40px;color:#888;}.disclaimer{background:#fffbe1;border:1px solid #ffe58f;padding:10px 20px;border-radius:6px;margin-top:32px;font-size:15px;max-width:520px;margin-left:auto;margin-right:auto;line-height:1.8;color:#8d6700;}</style>
+</head>
+<body>
+<header>
+    <h1><a href="/">前端通用媒体测试</a></h1>
+</header>
+<div class="cont">
+  <div class="am-u-lg-12 am-margin-bottom-lg" style="padding:0;">
+    <div class="am-input-group">
+      <input type="text" class="am-form-field" name="url" id="url" placeholder="请输入支持https的m3u8/mp4/mp3地址">
+      <span class="am-input-group-btn">
+        <button class="am-btn am-btn-default" type="button" name="doplayers" id="doplayers">立即播放</button>
+      </span>
+    </div>
+  </div>
+  <div class="clear"></div>
+  <div id="ckplays"></div>
+  <div class="disclaimer">免责声明：本页面仅供前端开发者用于媒体测试，不提供任何内容资源，也不用于商业播放，版权归原始视频音频资源方所有。请勿用于侵权行为，否则后果自负。</div>
+  <p id="footer">© 前端通用媒体测试 | Powered by Plyr</p>
+</div>
+<script src="https://cdn.plyr.io/3.7.8/plyr.polyfilled.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7/dist/hls.min.js"></script>
+<script>
+function playMedia(url) {
+    var ext = url.split('?')[0].split('.').pop().toLowerCase();
+    var type = (ext==="m3u8") ? "hls" : (
+      ["mp4","mov","webm","ogg","ogv"].includes(ext) ? 'video' :
+      ["mp3","wav","aac","flac","m4a","oga"].includes(ext) ? 'audio' : 'unknown'
+    );
+    var html = '';
+    if (type==="hls") {
+        html = '<video id="player" playsinline controls></video>';
+    } else if (type==="video") {
+        html = '<video id="player" playsinline controls src="'+url+'"></video>';
+    } else if (type==="audio") {
+        html = '<audio id="player" controls src="'+url+'"></audio>';
+    } else {
+        document.getElementById('ckplays').innerHTML = '<div style="color:red;padding:24px;">暂不支持此格式</div>';
+        return;
+    }
+    document.getElementById('ckplays').innerHTML = html;
+    var playerElement = document.getElementById('player');
+    if (type==="hls") {
+        if (Hls.isSupported()) {
+            var hls = new Hls();
+            hls.loadSource(url);
+            hls.attachMedia(playerElement);
+        } else if (playerElement.canPlayType('application/vnd.apple.mpegurl')) {
+            playerElement.src = url;
+        }
+    }
+    var plyr = new Plyr(playerElement, { ratio: '16:9', captions: {active:false}, tooltips:{controls:true}, i18n: {speed:'倍速',play:'播放',pause:'暂停'}});
+    plyr.volume = 1;
+}
+// 点击播放
+ document.getElementById('doplayers').addEventListener('click', function() {
+     playMedia(document.getElementById('url').value);
+ });
+// 回车播放
+ document.getElementById('url').addEventListener('keydown', function(e) {
+   if (e.key === 'Enter') playMedia(this.value);
+ });
+// URL 参数自动播放: ?url=xxx
+(function() {
+    var params = new URLSearchParams(location.search);
+    var autoUrl = params.get('url') || location.hash.slice(1);
+    if (autoUrl) playMedia(autoUrl);
+})();
+</script>
+</body>
+</html>
