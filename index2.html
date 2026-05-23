@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<meta http-equiv="X-UA-Compatible" content="IE=Edge">
+<title>m3u8在线播放器 (增强版)</title>
+<link href="https://cdn.jsdelivr.net/npm/amazeui@2.7.2/css/amazeui.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/dplayer@1.27.1/dist/DPlayer.min.css" rel="stylesheet">
+<style>
+body{text-align:center;}
+header{margin:20px 0;}
+header h1{width:280px;margin:0 auto;}
+.cont{position:relative;}
+#ckplays{margin-top:15px;position:relative;}
+.player-controls{position:relative;z-index:9;}
+.custom-controls{position:absolute;top:6px;right:6px;z-index:10;display:flex;gap:8px;}
+.lock-btn, .rotate-btn, .speed-btn{background:#000c;color:#fff;border:none;border-radius:5px;padding:6px 11px;opacity:0.8;}
+.locked .am-form-field, .locked .am-btn, .locked .custom-controls .rotate-btn, .locked .custom-controls .speed-btn{pointer-events:none;opacity:0.45;}
+.locked .unlock-btn{pointer-events:auto;opacity:1;}
+.lock-btn:active, .rotate-btn:active, .speed-btn:active{opacity:1;}
+.unlock-btn{background:#f33;color:#fff;border:none;border-radius:5px;padding:6px 11px;display:none;position:absolute;top:6px;left:6px;z-index:12;}
+.locked .unlock-btn{display:block;}
+.slide-indicator{position:absolute;left:50%;top:30px;transform:translateX(-50%);color:#fff;background:rgba(0,0,0,0.5);border-radius:5px;padding:7px 22px;z-index:999;font-size:1.4rem;min-width:116px;pointer-events:none;display:none;}
+@media(max-width:700px){html{font-size:56%;}.custom-controls{right:2px;top:2px;}}
+</style>
+</head>
+<body>
+<header>
+    <h1><a href="/">m3u8在线播放器 (增强版)</a></h1>
+</header>
+<div class="cont">
+  <div class="am-u-lg-12 am-margin-bottom-lg" style="padding:0;">
+    <div class="am-input-group">
+      <input type="text" class="am-form-field" name="url" id="url" placeholder="请输入支持https的m3u8地址">
+      <span class="am-input-group-btn">
+        <button class="am-btn am-btn-default" type="button" name="doplayers" id="doplayers">立即播放</button>
+      </span>
+    </div>
+  </div>
+  <div class="clear"></div>
+  <div id="ckplays">
+    <div class="custom-controls" id="customControls" style="display:none;">
+      <button class="lock-btn" id="lockBtn">🔒</button>
+      <button class="rotate-btn" id="rotateBtn">⟳旋转</button>
+      <button class="speed-btn" id="speedBtn">速度</button>
+    </div>
+    <button class="unlock-btn" id="unlockBtn">解锁🔓</button>
+    <div class="slide-indicator" id="slideIndicator"></div>
+  </div>
+  <p id="footer">© m3u8 Player</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7/dist/hls.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dplayer@1.27.1/dist/DPlayer.min.js"></script>
+<script>
+var dp = null;
+var lockStatus = false;
+var currentRotation = 0;
+var normalPlaybackRate = 1;
+var slideType = null, startX = 0, startY = 0, lastX = 0, lastY = 0, seekStart = 0, brightness = 1, volume = 1;
+var isLongPress = false, longPressTimer = null;
+var showControlsTimeout = null;
+
+// 初始化亮度调节
+try {
+    brightness = window.localStorage.getItem('brightness') ? +window.localStorage.getItem('brightness') : 1;
+} catch(e) {brightness = 1;}
+try {
+    volume = window.localStorage.getItem('volume') ? +window.localStorage.getItem('volume') : 1;
+} catch(e) {volume = 1;}
+
+const speeds = [0.5, 1, 1.25, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
+
+function setPlayerBrightness(b) {
+    // CSS filter 模拟亮度
+    document.querySelector('#ckplays .dplayer-video-wrap video').style.filter = `brightness(${b})`;
+    window.localStorage.setItem('brightness', b);
+}
+function setPlayerVolume(v) {
+    if(dp) dp.volume(v);
+    window.localStorage.setItem('volume', v);
+}
+
+function createControls() {
+    document.getElementById('customControls').style.display = 'flex';
+    document.getElementById('lockBtn').onclick = function() {
+        lockStatus = true;
+        document.body.classList.add('locked');
+    }
+    document.getElementById('unlockBtn').onclick = function() {
+        lockStatus = false;
+        document.body.classList.remove('locked');
+    }
+    document.getElementById('rotateBtn').onclick = function() {
+        currentRotation = (currentRotation + 90)%360;
+        document.querySelector('#ckplays .dplayer').style.transform = `rotate(${currentRotation}deg)`;
+    }
+    document.getElementById('speedBtn').onclick = function(e) {
+        if(lockStatus) return;
+        let menu = document.querySelector('#speedMenu');
+        if(!menu){
+            menu = document.createElement('div');
+            menu.id = 'speedMenu';
+            menu.style.cssText='position:absolute;top:38px;right:2px;background:#222;color:#fff;border-radius:6px;padding:5px 4px;z-index:15;font-size:1.2rem;';
+            speeds.forEach(spd=>{
+              let b=document.createElement('button');
+              b.innerText=spd+'x';
+              b.style.cssText='margin:3px 3px;padding:5px 10px;border:none;background:'+(spd==dp.speed?"#666":"#111")+';border-radius:3px;color:#fff;';
+              b.onclick=(ev)=>{ev.stopPropagation();dp.speed(spd);normalPlaybackRate=spd;menu.remove();};
+              menu.appendChild(b);
+            });
+            document.getElementById('ckplays').appendChild(menu);
+            window.onclick=function(){menu.remove();window.onclick=null;}
+        }
+    }
+}
+
+function showSlideIndicator(text){
+    let indicator = document.getElementById('slideIndicator');
+    indicator.innerText = text;
+    indicator.style.display = 'block';
+    clearTimeout(indicator._timer);
+    indicator._timer = setTimeout(()=>{indicator.style.display = 'none';},1200);
+}
+
+function handleGestureEvents(){
+    let container = document.getElementById('ckplays');
+    container.oncontextmenu = e=>e.preventDefault();
+    container.addEventListener('touchstart',function(e){
+        if(lockStatus) return;
+        if(!dp) return;
+        let touch = e.touches[0];
+        startX = lastX = touch.clientX;
+        startY = lastY = touch.clientY;
+        slideType = null;
+        seekStart = dp.video.currentTime;
+        // 长按2倍速
+        isLongPress = false;
+        longPressTimer = setTimeout(function(){
+            isLongPress = true;
+            dp.speed(2);
+        },400);
+    });
+    container.addEventListener('touchmove',function(e){
+        if(lockStatus) return;
+        if(!dp) return;
+        let touch = e.touches[0];
+        lastX = touch.clientX;
+        lastY = touch.clientY;
+        let dx = lastX - startX,
+            dy = lastY - startY,
+            absDx = Math.abs(dx),
+            absDy = Math.abs(dy),
+            width = container.clientWidth;
+        if(!slideType){
+            slideType = absDx > absDy ? 'seek' : (startX < width/2 ? 'brightness' : 'volume');
+        }
+        if(slideType==='seek'){
+            let duration = dp.video.duration || 1800;
+            let seekSec = Math.round(dx/width * duration);
+            let ct = Math.max(0, Math.min(seekStart+seekSec, duration));
+            showSlideIndicator('跳转：'+formatTime(ct));
+            dp.seek(ct);
+        }else if(slideType==='brightness'){
+            brightness = Math.max(0, Math.min(2, brightness - dy/350 ));
+            setPlayerBrightness(brightness);
+            showSlideIndicator('亮度：'+Math.round(brightness*100)+'%');
+        }else if(slideType==='volume'){
+            volume = Math.max(0, Math.min(1, volume - dy/350));
+            setPlayerVolume(volume);
+            showSlideIndicator('音量：'+Math.round(volume*100)+'%');
+        }
+        if(longPressTimer){clearTimeout(longPressTimer);longPressTimer=null;}
+    });
+    container.addEventListener('touchend',function(e){
+        if(longPressTimer){clearTimeout(longPressTimer);longPressTimer=null;}
+        if(isLongPress){dp.speed(normalPlaybackRate);isLongPress=false;}
+        setTimeout(()=>{document.getElementById('slideIndicator').style.display='none';},250);
+    });
+}
+
+function formatTime(s){
+    s = Math.floor(s);
+    let m = Math.floor(s/60), ss = s%60;
+    return m+":"+((ss<10)?"0":"")+ss;
+}
+
+function doPlay(url) {
+    if (!url) return;
+    document.getElementById('url').value = url;
+    if (dp) { dp.destroy(); dp = null; currentRotation=0; }
+    document.getElementById('ckplays').innerHTML = '<div class="custom-controls" id="customControls" style="display:none;"><button class="lock-btn" id="lockBtn">🔒</button><button class="rotate-btn" id="rotateBtn">⟳旋转</button><button class="speed-btn" id="speedBtn">速度</button></div><button class="unlock-btn" id="unlockBtn">解锁🔓</button><div class="slide-indicator" id="slideIndicator"></div>';
+    dp = new DPlayer({
+        container: document.getElementById('ckplays'),
+        video: {
+            url: url,
+            type: 'hls',
+        },
+        autoplay: true
+    });
+    setTimeout(()=>{
+        createControls();
+        document.body.classList.remove('locked');
+        setPlayerBrightness(brightness);
+        setPlayerVolume(volume);
+        handleGestureEvents();
+        dp.speed(normalPlaybackRate);
+    }, 440);
+    document.getElementById('ckplays').style.height = 'auto';
+}
+// 点击播放
+ document.getElementById('doplayers').addEventListener('click', function() {
+     if(document.body.classList.contains('locked'))return;
+     doPlay(document.getElementById('url').value);
+ });
+// 回车播放
+ document.getElementById('url').addEventListener('keydown', function(e) {
+   if (e.key === 'Enter' && !document.body.classList.contains('locked')) doPlay(this.value);
+ });
+// URL 参数自动播放: ?url=https://xxx.m3u8
+(function() {
+    var params = new URLSearchParams(location.search);
+    var autoUrl = params.get('url') || location.hash.slice(1);
+    if (autoUrl) doPlay(autoUrl);
+})();
+</script>
+</body>
+</html>
