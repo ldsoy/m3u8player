@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,minimum-scale=1.0,maximum-scale=1.0,user-scalable=no">
+<meta http-equiv="X-UA-Compatible" content="IE=Edge">
+<title>前端通用媒体测试</title>
+<link href="https://cdn.jsdelivr.net/npm/amazeui@2.7.2/css/amazeui.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/dplayer@1.27.1/dist/DPlayer.min.css" rel="stylesheet">
+<style>
+body{text-align:center}header{margin:20px 0}header h1{width:280px;margin:0 auto}html{font-size:62.5%;font-family:'microsoft yahei',Simsun,sans-serif}blockquote,body,button,code,dd,div,dl,dt,fieldset,form,h1,h2,h3,h4,h5,h6,hr,input,legend,li,ol,p,pre,td,textarea,th,ul{margin:0;padding:0}h1,h2,h3,h4{font-size:100%;font-family:arial,'hiragino sans gb','microsoft yahei',Simsun,sans-serif}li{list-style:none}a:link,a:visited{text-decoration:none}body{font-size:12px;line-height:1.333}.clear{clear:both}.cont{width:1200px;margin:0 auto}#ckplays{height:650px;background:#eee}#footer{margin-top:30px;color:#111;text-align:center}@media screen and (min-width:0px) and (max-width:900px){.cont{width:auto;min-width:auto}#ckplays{width:100%;min-height:260px;height:auto}}
+/* 免责声明（footer 区域） */
+#footer{text-align:left;max-width:900px;margin:30px auto 0;padding:14px 20px;background:#fffbe6;border:1px solid #ffe58f;border-radius:6px;font-size:12px;line-height:1.8;color:#8c6d1f}#footer strong{display:block;font-size:13px;margin-bottom:6px;color:#ad6800}#footer p{margin:0 0 4px}
+
+/* ── 旋转按钮（仅移动端显示） ── */
+#rotate-btn{
+  display:none;
+  position:fixed;
+  bottom:18px;
+  right:18px;
+  z-index:9999;
+  width:48px;height:48px;
+  border-radius:50%;
+  border:none;
+  background:rgba(0,0,0,.65);
+  color:#fff;
+  font-size:22px;
+  cursor:pointer;
+  box-shadow:0 2px 8px rgba(0,0,0,.4);
+  display:none;
+}
+/* 移动端才显示按钮 */
+@media screen and (max-width:900px){
+  #rotate-btn{display:flex;align-items:center;justify-content:center}
+}
+
+/* ── 横屏模式：整个页面旋转 ── */
+/* 竖→横：顺时针转90度，让页面宽度=屏幕高度，高度=屏幕宽度 */
+html.landscape,
+html.landscape body{
+  width:100vh;
+  height:100vw;
+  overflow:hidden;
+  position:fixed;
+  top:0;left:0;
+}
+html.landscape{
+  transform-origin:top left;
+  transform:rotate(90deg) translateY(-100%);
+  /* 100vh = 原竖屏宽度，作为旋转后的高度 */
+  width:100vh;
+  height:100vw;
+}
+html.landscape body{
+  width:100vh;
+  height:100vw;
+}
+/* 横屏模式下播放器撑满 */
+html.landscape #ckplays{
+  width:100% !important;
+  height:100% !important;
+}
+</style>
+</head>
+<body>
+
+<!-- 旋转按钮 -->
+<button id="rotate-btn" title="旋转屏幕">&#x21BB;</button>
+
+<header>
+	<h1><a href="/" style="text-decoration:none;color:inherit">前端通用媒体测试</a></h1>
+</header>
+<div class="cont">
+  <div class="am-u-lg-12 am-margin-bottom-lg" style="padding:0;">
+    <div class="am-input-group">
+      <input type="text" class="am-form-field" name="url" id="url" placeholder="请输入支持https的m3u8地址">
+      <span class="am-input-group-btn">
+        <button class="am-btn am-btn-default" type="button" name="doplayers" id="doplayers">立即播放</button>
+      </span>
+    </div>
+  </div>
+  <div class="clear"></div>
+  <div id="ckplays"></div>
+  <div id="footer">
+    <strong>免责声明</strong>
+    <p>1. 本工具仅供流媒体技术开发、格式兼容性测试及学习研究使用，不得用于任何商业用途或非法目的。</p>
+    <p>2. 用户输入的媒体地址及播放内容均由用户自行提供，本工具不存储、不缓存、不分发任何媒体内容。</p>
+    <p>3. 用户须确保所播放的内容已获得合法授权，因使用本工具播放未授权内容而产生的一切法律责任，由用户自行承担，与本工具无关。</p>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.7/dist/hls.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dplayer@1.27.1/dist/DPlayer.min.js"></script>
+<script>
+var dp = null;
+var isLandscape = false;
+
+function doPlay(url) {
+    if (!url) return;
+    document.getElementById('url').value = url;
+
+    if (dp) { dp.destroy(); dp = null; }
+
+    // 清空播放器区域，准备加载 DPlayer
+    var container = document.getElementById('ckplays');
+    container.innerHTML = '';
+
+    dp = new DPlayer({
+        container: container,
+        video: {
+            url: url,
+            type: 'hls',
+        },
+        autoplay: true,
+    });
+
+    container.style.height = 'auto';
+}
+
+// 点击播放
+document.getElementById('doplayers').addEventListener('click', function() {
+    doPlay(document.getElementById('url').value);
+});
+
+// 回车播放
+document.getElementById('url').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') doPlay(this.value);
+});
+
+// Hash 自动播放: #https://xxx.m3u8
+(function() {
+    var autoUrl = location.hash.slice(1);
+    if (autoUrl) doPlay(autoUrl);
+})();
+
+/* ── 旋转屏幕按钮逻辑 ── */
+var rotateBtn = document.getElementById('rotate-btn');
+
+rotateBtn.addEventListener('click', function() {
+    isLandscape = !isLandscape;
+
+    if (isLandscape) {
+        document.documentElement.classList.add('landscape');
+        rotateBtn.innerHTML = '&#x21BB;';
+        rotateBtn.title = '恢复竖屏';
+    } else {
+        document.documentElement.classList.remove('landscape');
+        rotateBtn.innerHTML = '&#x21BB;';
+        rotateBtn.title = '旋转屏幕';
+    }
+});
+
+// 如果浏览器支持 screen.orientation，尝试用真横屏辅助
+// （仅辅助，主体仍是 CSS 旋转方案，兼容性更好）
+rotateBtn.addEventListener('click', function() {
+    if (!isLandscape) return;
+    try {
+        if (screen.orientation && typeof screen.orientation.lock === 'function') {
+            screen.orientation.lock('landscape').catch(function(){});
+        }
+    } catch(e){}
+});
+</script>
+</body>
+</html>
